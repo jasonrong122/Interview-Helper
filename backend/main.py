@@ -1,70 +1,123 @@
 import asyncio
 import os
+import json
+import base64
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
-load_dotenv() # This safely loads your key into the environment variables
+load_dotenv()
 
 app = FastAPI()
-
-# Initialize the GenAI client (Requires GEMINI_API_KEY environment variable)
-client = genai.Client()
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
 @app.websocket("/ws/system-design")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("Local client connected!")
-    
-    # Configure the Gemini Live API session persona
+
+    # Configure the persona
     config = types.LiveConnectConfig(
-        response_modalities=[types.Modality.AUDIO], # We only want Gemini to speak back
+        response_modalities=[types.Modality.AUDIO],
         system_instruction=types.Content(
             parts=[types.Part.from_text(
-                "You are a Senior Engineering Manager conducting a system design interview. "
-                "The user is drawing a system architecture on screen and explaining it out loud. "
-                "Watch their diagram closely. If they make an architectural mistake, or if they "
-                "choose a relational database for a highly scalable read-heavy system without "
-                "mentioning caching, gently interrupt them and ask them to justify their choice."
+                text="""You are a Senior Engineering Manager conducting a system design interview. The user is drawing a system architecture on screen and explaining it out loud. Watch their diagram closely. If they make an architectural mistake, or if they choose a relational database for a highly scalable read-heavy system without mentioning caching, gently interrupt them and ask them to justify their choice."""
             )]
         )
     )
 
     try:
-        # Connect to the Gemini Live API using the async client
-        async with client.aio.live.connect(model="gemini-2.0-flash", config=config) as session:
-            print("Connected to Gemini Live API!")
+        # Connect to Gemini Live API
+        async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as session:
+            print("Successfully connected to Gemini Live API!")
 
-            # Task 1: Receive video/audio from your local PC and send it to Gemini
+            # Event to signal all tasks to stop
+            stop_event = asyncio.Event()
+
             async def receive_from_client():
+                """Receive audio/screen data from client and forward to Gemini."""
                 try:
-                    while True:
-                        # We will define the exact JSON/binary format for this later
-                        message = await websocket.receive_bytes() 
-                        await session.send(input=message) 
+                    while not stop_event.is_set():
+                        try:
+                            message = await asyncio.wait_for(
+                                websocket.receive_text(), timeout=1.0
+                            )
+                        except asyncio.TimeoutError:
+                            continue
+
+                        data = json.loads(message)
+                        raw_bytes = base64.b64decode(data["data"])
+
+                        if data["mime_type"].startswith("audio/"):
+                            # Use realtime input for audio (low-latency streaming)
+                            await session.send_realtime_input(
+                                audio={"data": raw_bytes, "mime_type": data["mime_type"]}
+                            )
+                        else:
+                            # Use send for images/other media
+                            await session.send(
+                                input={"data": raw_bytes, "mime_type": data["mime_type"]}
+                            )
+
                 except WebSocketDisconnect:
                     print("Local client disconnected.")
-
-            # Task 2: Receive spoken audio from Gemini and send it back to your PC to play
-            async def receive_from_gemini():
-                try:
-                    async for response in session.receive():
-                        server_content = response.server_content
-                        if server_content is not None and server_content.model_turn is not None:
-                            for part in server_content.model_turn.parts:
-                                if part.inline_data:
-                                    # Send the raw audio bytes back down the WebSocket
-                                    await websocket.send_bytes(part.inline_data.data)
                 except asyncio.CancelledError:
                     pass
+                except Exception as e:
+                    print(f"Error receiving from client: {e}")
+                finally:
+                    stop_event.set()
 
-            # Run both streaming tasks at the same time
-            client_task = asyncio.create_task(receive_from_client())
-            gemini_task = asyncio.create_task(receive_from_gemini())
-            
-            await asyncio.gather(client_task, gemini_task)
+            async def receive_from_gemini():
+                """Receive responses from Gemini and forward audio to client."""
+                try:
+                    while not stop_event.is_set():
+                        try:
+                            turn = session.receive()
+                            async for response in turn:
+                                if stop_event.is_set():
+                                    break
+                                server_content = response.server_content
+                                if server_content is not None and server_content.model_turn is not None:
+                                    for part in server_content.model_turn.parts:
+                                        if part.inline_data:
+                                            try:
+                                                await websocket.send_bytes(part.inline_data.data)
+                                            except Exception:
+                                                stop_event.set()
+                                                return
+                        except Exception as e:
+                            if stop_event.is_set():
+                                break
+                            print(f"Error in Gemini receive loop: {e}")
+                            break
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    print(f"Error receiving from Gemini: {e}")
+                finally:
+                    stop_event.set()
+
+            # Run both tasks; when one stops, cancel the other
+            tasks = [
+                asyncio.create_task(receive_from_client()),
+                asyncio.create_task(receive_from_gemini()),
+            ]
+
+            # Wait for the stop event, then clean up
+            try:
+                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                print("Session ended.")
 
     except Exception as e:
-        print(f"Error connecting to Gemini: {e}")
-        await websocket.close()
+        print(f"Failed to connect to Gemini: {e}")
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
