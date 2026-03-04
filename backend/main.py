@@ -3,6 +3,9 @@ import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
+
+load_dotenv() # This safely loads your key into the environment variables
 
 app = FastAPI()
 
