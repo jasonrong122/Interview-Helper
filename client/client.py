@@ -40,14 +40,16 @@ async def send_audio(ws, stop_event):
 async def send_screen(ws, stop_event):
     """Continuously capture screen, resize, and send to the backend."""
     sct = mss.mss()
-    monitor = sct.monitors[1] # Change to 2 if you have a second monitor
+    monitor = sct.monitors[2] # Verify this is the correct monitor index!
     
     while not stop_event.is_set():
         try:
             sct_img = sct.grab(monitor)
             img = np.array(sct_img)
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            img = cv2.resize(img, (1280, 720))
+            
+            # Use 1080p for better clarity on diagrams
+            img = cv2.resize(img, (1920, 1080)) 
             
             _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
             payload = {
@@ -59,7 +61,9 @@ async def send_screen(ws, stop_event):
             break
         except Exception as e:
             print(f"Screen capture error: {e}")
-        await asyncio.sleep(1)
+            
+        # Optional: Slightly increase frame rate if your connection handles it well
+        await asyncio.sleep(0.5)
 
 async def receive_audio(ws, stop_event):
     """Listen for Gemini's spoken responses and play them through the speakers."""
