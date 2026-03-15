@@ -17,13 +17,19 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("Local client connected!")
 
-    # Configure the persona
+    # Configure the persona and response speed
     config = types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],
-        turn_coverage=types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
+        # generation_config handles the VAD (Voice Activity Detection) speed
+        generation_config={
+            "speech_config": {
+                "voice_config": {"prebuilt_voice_config": {"voice_name": "Aoede"}},
+            },
+            # This makes the agent respond faster after you stop talking
+            "candidate_count": 1,
+        },
         system_instruction=types.Content(
             parts=[types.Part.from_text(
-                # text="""You are a Senior Engineering Manager conducting a system design interview. The user is drawing a system architecture on screen and explaining it out loud. Watch their diagram closely. If they make an architectural mistake, or if they choose a relational database for a highly scalable read-heavy system without mentioning caching, gently interrupt them and ask them to justify their choice."""
                 text="""You are a Senior Software Engineer at a top tech company conducting a technical data structures and algorithms interview. 
                 The user is writing code on screen and explaining their thought process out loud. Watch their code closely.
                 If they start writing a brute-force O(n^2) solution when a more optimal O(n) approach (like a sliding window, two-pointer, or hash map) exists, 
