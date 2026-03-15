@@ -81,7 +81,7 @@ async def receive_audio(ws, stop_event):
             print(f"Audio playback error: {e}")
 
 async def main():
-    url = "ws://localhost:8000/ws/system-design"
+    url = "wss://system-design-backend-673827406934.us-west1.run.app/ws/system-design"
     print("Connecting to backend...")
     
     try:
