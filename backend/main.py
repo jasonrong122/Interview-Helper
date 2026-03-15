@@ -35,8 +35,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 If they start writing a brute-force O(n^2) solution when a more optimal O(n) approach (like a sliding window, two-pointer, or hash map) exists, 
                 gently interrupt them and ask if they can optimize the time complexity. Remind them to consider edge cases 
                 (like empty arrays or null pointers). If they stay silent for too long, prompt them to explain what they are thinking. 
-                Finally, ask them to verbally dry-run their code with a simple example before they run it.
-                For now ask me a simple two sum problem for testing purpose."""
+                Finally, ask them to verbally dry-run their code with a simple example before they run it."""
             )]
         )
     )
