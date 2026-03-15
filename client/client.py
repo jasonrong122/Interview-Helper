@@ -40,7 +40,7 @@ async def send_audio(ws, stop_event):
 async def send_screen(ws, stop_event):
     """Continuously capture screen, resize, and send to the backend."""
     sct = mss.mss()
-    monitor = sct.monitors[2] # Verify this is the correct monitor index!
+    monitor = sct.monitors[1] # Verify this is the correct monitor index!
     
     while not stop_event.is_set():
         try:
