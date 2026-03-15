@@ -20,6 +20,7 @@ async def websocket_endpoint(websocket: WebSocket):
     # Configure the persona
     config = types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],
+        turn_coverage=types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
         system_instruction=types.Content(
             parts=[types.Part.from_text(
                 # text="""You are a Senior Engineering Manager conducting a system design interview. The user is drawing a system architecture on screen and explaining it out loud. Watch their diagram closely. If they make an architectural mistake, or if they choose a relational database for a highly scalable read-heavy system without mentioning caching, gently interrupt them and ask them to justify their choice."""
@@ -51,7 +52,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     while not stop_event.is_set():
                         try:
                             message = await asyncio.wait_for(
-                                websocket.receive_text(), timeout=1.0
+                                websocket.receive_text(), timeout=0.1
                             )
                         except asyncio.TimeoutError:
                             continue
@@ -65,9 +66,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                 audio={"data": raw_bytes, "mime_type": data["mime_type"]}
                             )
                         else:
-                            # Use send for images/other media
-                            await session.send(
-                                input={"data": raw_bytes, "mime_type": data["mime_type"]}
+                            # Use realtime input for images too (lower latency than session.send)
+                            await session.send_realtime_input(
+                                video={"data": raw_bytes, "mime_type": data["mime_type"]}
                             )
 
                 except WebSocketDisconnect:
