@@ -38,6 +38,9 @@ async def websocket_endpoint(websocket: WebSocket):
         # Connect to Gemini Live API
         async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as session:
             print("Successfully connected to Gemini Live API!")
+            
+            # --- NEW LINE: Trigger the agent to speak first ---
+            await session.send(input="Hi, I just joined the call. Please introduce yourself and give me the first problem.")
 
             # Event to signal all tasks to stop
             stop_event = asyncio.Event()
